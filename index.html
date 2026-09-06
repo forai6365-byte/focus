@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15181C">
+<title>Focus Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg:#15181C;
+    --surface:#1B1F24;
+    --surface-2:#21262C;
+    --hairline:#2B3138;
+    --text:#ECEEF0;
+    --text-dim:#8B929A;
+    --text-faint:#565D64;
+    --focus:#45E0C4;
+    --focus-ink:#0B1210;
+    --break:#E3A857;
+    --break-ink:#1F1204;
+    --completed:#6FCF97;
+    --interrupted:#E2686B;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', -apple-system, sans-serif;
+    min-height:100vh;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .app{
+    max-width:480px;
+    margin:0 auto;
+    padding:24px 20px calc(32px + env(safe-area-inset-bottom));
+    min-height:100vh;
+  }
+  .app-header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:20px;
+  }
+  .wordmark{
+    font-size:17px;
+    font-weight:600;
+    letter-spacing:0.2px;
+  }
+  .app-header .sub{
+    font-size:12px;
+    color:var(--text-faint);
+  }
+
+  .tabbar{
+    display:flex;
+    border-bottom:1px solid var(--hairline);
+    margin-bottom:24px;
+  }
+  .tab-btn{
+    flex:1;
+    background:none;
+    border:none;
+    color:var(--text-dim);
+    font-family:inherit;
+    font-size:15px;
+    font-weight:500;
+    padding:10px 4px 12px;
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    margin-bottom:-1px;
+    transition:color .15s ease, border-color .15s ease;
+  }
+  .tab-btn.active{
+    color:var(--text);
+    border-bottom-color:var(--focus);
+  }
+  .tab-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+
+  /* Pomodoro tab */
+  .picker-label{
+    font-size:14px;
+    color:var(--text-dim);
+    margin:0 0 10px;
+  }
+  .chip-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:8px;
+  }
+  .chip{
+    background:var(--surface);
+    border:1px solid var(--hairline);
+    color:var(--text-dim);
+    font-family:inherit;
+    font-size:14px;
+    font-weight:500;
+    padding:9px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    transition:background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .chip.selected{
+    background:var(--focus);
+    border-color:var(--focus);
+    color:var(--focus-ink);
+  }
+  .chip[disabled]{ opacity:.4; pointer-events:none; }
+  .chip:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+
+  .break-note{
+    font-size:14px;
+    color:var(--text-dim);
+    padding:9px 2px;
+  }
+
+  .timer-block{
+    display:flex;
+    justify-content:center;
+    margin:32px 0 28px;
+  }
+  .ring-wrap{ position:relative; width:220px; height:220px; }
+  .ring-svg{ width:220px; height:220px; transform:rotate(-90deg); }
+  .ring-track{ fill:none; stroke:var(--surface-2); stroke-width:10; }
+  .ring-progress{
+    fill:none;
+    stroke:var(--focus);
+    stroke-width:10;
+    stroke-linecap:round;
+    transition:stroke-dashoffset .9s linear, stroke .3s ease;
+  }
+  .app.phase-break .ring-progress{ stroke:var(--break); }
+  .ring-center{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+  }
+  .digits{
+    font-family:'IBM Plex Mono', monospace;
+    font-variant-numeric:tabular-nums;
+    font-size:52px;
+    font-weight:500;
+    letter-spacing:1px;
+  }
+  .phase-tag{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-size:14px;
+    color:var(--text-dim);
+  }
+  .dot{ width:8px; height:8px; border-radius:50%; background:var(--focus); flex:none; }
+  .app.phase-break .dot{ background:var(--break); }
+
+  .controls{
+    display:flex;
+    justify-content:center;
+    gap:12px;
+  }
+  .btn{
+    font-family:inherit;
+    font-size:15px;
+    font-weight:600;
+    border-radius:10px;
+    padding:14px 30px;
+    cursor:pointer;
+    border:none;
+  }
+  .btn:focus-visible{ outline:2px solid var(--text); outline-offset:2px; }
+  .btn-primary{
+    background:var(--focus);
+    color:var(--focus-ink);
+    min-width:140px;
+  }
+  .app.phase-break .btn-primary{ background:var(--break); color:var(--break-ink); }
+  .btn-primary[disabled]{ opacity:.4; pointer-events:none; }
+  .btn-secondary{
+    background:transparent;
+    border:1px solid var(--hairline);
+    color:var(--text-dim);
+  }
+
+  /* History tab */
+  .stats-strip{
+    display:flex;
+    border:1px solid var(--hairline);
+    border-radius:10px;
+    overflow:hidden;
+    margin-bottom:8px;
+  }
+  .stat{
+    flex:1;
+    padding:14px 10px;
+    text-align:center;
+    border-left:1px solid var(--hairline);
+  }
+  .stat:first-child{ border-left:none; }
+  .stat .label{ font-size:12px; color:var(--text-dim); margin-bottom:6px; }
+  .stat .value{ font-family:'IBM Plex Mono', monospace; font-size:17px; }
+  .sessions-line{
+    font-size:13px;
+    color:var(--text-faint);
+    padding:8px 2px 22px;
+  }
+
+  .drive-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-size:13px;
+    color:var(--text-dim);
+    padding:10px 2px;
+    border-bottom:1px solid var(--hairline);
+    margin-bottom:14px;
+  }
+  .btn-link{
+    background:none;
+    border:none;
+    color:var(--focus);
+    font-family:inherit;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    padding:4px 0 4px 12px;
+  }
+  .btn-link:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+
+  .section-title{
+    font-size:15px;
+    font-weight:600;
+    margin:0 0 10px;
+  }
+  .subject-stats{ margin-bottom:28px; }
+  .subj-row{ margin-bottom:12px; }
+  .subj-row-top{
+    display:flex;
+    justify-content:space-between;
+    font-size:14px;
+    margin-bottom:6px;
+  }
+  .subj-row-top .name{ color:var(--text); }
+  .subj-row-top .time{ font-family:'IBM Plex Mono', monospace; color:var(--text-dim); }
+  .bar-track{
+    height:4px;
+    background:var(--surface-2);
+    border-radius:2px;
+    overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;
+    background:var(--focus);
+    border-radius:2px;
+  }
+
+  .date-group{ margin-bottom:18px; }
+  .date-heading{
+    font-size:14px;
+    font-weight:600;
+    color:var(--text-dim);
+    margin:0 0 8px;
+  }
+  .session-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    padding:12px 0;
+    border-bottom:1px solid var(--hairline);
+  }
+  .date-group .session-row:last-child{ border-bottom:none; }
+  .session-left .subject{ font-size:15px; font-weight:500; margin-bottom:3px; }
+  .session-left .range{ font-size:13px; color:var(--text-dim); }
+  .session-right{ text-align:right; flex:none; }
+  .session-right .dur{ font-family:'IBM Plex Mono', monospace; font-size:14px; margin-bottom:4px; }
+  .status{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:6px;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .status .dot{ background:var(--completed); }
+  .status.interrupted .dot{ background:var(--interrupted); }
+
+  .empty-state{
+    text-align:center;
+    color:var(--text-faint);
+    font-size:14px;
+    padding:48px 12px;
+    line-height:1.6;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .ring-progress, .tab-btn{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <header class="app-header">
+    <span class="wordmark">Focus Log</span>
+    <span class="sub">Pomodoro</span>
+  </header>
+
+  <nav class="tabbar" role="tablist">
+    <button class="tab-btn active" data-tab="pomodoro" role="tab" aria-selected="true">Pomodoro</button>
+    <button class="tab-btn" data-tab="history" role="tab" aria-selected="false">History</button>
+  </nav>
+
+  <section id="tab-pomodoro" class="tab-panel active">
+    <div id="pickerArea"></div>
+
+    <div class="timer-block">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 220 220" class="ring-svg">
+          <circle class="ring-track" cx="110" cy="110" r="98"></circle>
+          <circle class="ring-progress" id="ringProgress" cx="110" cy="110" r="98"></circle>
+        </svg>
+        <div class="ring-center">
+          <div class="digits" id="digits">25:00</div>
+          <div class="phase-tag"><span class="dot"></span><span id="phaseText">Focus session</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="startPauseBtn">Start</button>
+      <button class="btn btn-secondary" id="resetBtn">Reset</button>
+    </div>
+  </section>
+
+  <section id="tab-history" class="tab-panel">
+    <div id="driveSync"></div>
+    <div id="statsStrip"></div>
+    <div class="sessions-line" id="sessionsLine"></div>
+
+    <h2 class="section-title">By subject</h2>
+    <div class="subject-stats" id="subjectStats"></div>
+
+    <h2 class="section-title">Timeline</h2>
+    <div id="timeline"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var SUBJECTS = ['Circuit','Physics','C Programming','English','Math'];
+  var DURATION_OPTIONS = [
+    { minutes:25,  focus:25*60,  brk:5*60  },
+    { minutes:55,  focus:55*60,  brk:10*60 },
+    { minutes:80,  focus:80*60,  brk:15*60 },
+    { minutes:120, focus:120*60, brk:20*60 }
+  ];
+  var selectedDurationIndex = 0;
+  function currentOption(){ return DURATION_OPTIONS[selectedDurationIndex]; }
+  var STORAGE_KEY = 'focusLogData_v1';
+
+  // ---- Google Drive backup ----
+  // Paste your own OAuth Client ID below (see setup instructions). Until you
+  // do, the Drive "Connect" button will just fail quietly — everything else
+  // in the app works fine without it.
+  var GOOGLE_CLIENT_ID = 'PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
+  var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  var DRIVE_META_KEY = 'focusLogDriveMeta_v1';
+  var RING_R = 98;
+  var RING_C = 2*Math.PI*RING_R;
+
+  // ---- storage (falls back to in-memory if localStorage is blocked) ----
+  var storageAvailable = (function(){
+    try{ var k='__flt__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
+    catch(e){ return false; }
+  })();
+  var memoryStore = {};
+  function storageGet(key){
+    if(storageAvailable) return localStorage.getItem(key);
+    return Object.prototype.hasOwnProperty.call(memoryStore,key) ? memoryStore[key] : null;
+  }
+  function storageSet(key,val){
+    if(storageAvailable){ try{ localStorage.setItem(key,val); }catch(e){} }
+    else { memoryStore[key]=val; }
+  }
+
+  // ---- data ----
+  var appData = loadData();
+
+  function loadData(){
+    var raw = storageGet(STORAGE_KEY);
+    var data;
+    try{ data = raw ? JSON.parse(raw) : null; }catch(e){ data = null; }
+    if(!data || !Array.isArray(data.sessions)) data = { sessions: [], currentSession: null };
+    if(data.currentSession){
+      finalizeAsInterrupted(data, data.currentSession);
+      data.currentSession = null;
+    }
+    persist(data);
+    return data;
+  }
+
+  function finalizeAsInterrupted(data, cur){
+    var start = new Date(cur.startTime);
+    var end = new Date(cur.lastHeartbeat || cur.startTime);
+    if(end < start) end = start;
+    var actual = Math.round((end - start)/1000);
+    data.sessions.push({
+      id: cur.subject + '-' + start.getTime(),
+      subject: cur.subject,
+      startTime: cur.startTime,
+      endTime: end.toISOString(),
+      plannedSeconds: cur.plannedSeconds,
+      actualSeconds: actual,
+      status: 'Interrupted'
+    });
+  }
+
+  function persist(data){ storageSet(STORAGE_KEY, JSON.stringify(data)); }
+
+  // ---- Drive state ----
+  var driveMeta = (function(){
+    var raw = storageGet(DRIVE_META_KEY);
+    var d = null;
+    try{ d = raw ? JSON.parse(raw) : null; }catch(e){ d = null; }
+    if(!d) d = { connected:false, fileId:null, lastSynced:null, pendingRetry:false };
+    return d;
+  })();
+  function saveDriveMeta(){ storageSet(DRIVE_META_KEY, JSON.stringify(driveMeta)); }
+
+  var driveAccessToken = null;
+  var driveTokenExpiry = 0;
+  var _tokenClient = null;
+
+  function ensureTokenClient(cb){
+    if(_tokenClient){ cb(_tokenClient); return; }
+    if(!(window.google && google.accounts && google.accounts.oauth2)){
+      setTimeout(function(){ ensureTokenClient(cb); }, 300);
+      return;
+    }
+    _tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: function(){}
+    });
+    cb(_tokenClient);
+  }
+
+  function getFreshAccessToken(callback, interactive){
+    if(driveAccessToken && Date.now() < driveTokenExpiry - 30000){ callback(driveAccessToken); return; }
+    ensureTokenClient(function(client){
+      client.requestAccessToken({
+        prompt: interactive ? 'consent' : '',
+        callback: function(resp){
+          if(resp && resp.access_token){
+            driveAccessToken = resp.access_token;
+            driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+            callback(driveAccessToken);
+          } else {
+            callback(null);
+          }
+        }
+      });
+    });
+  }
+
+  function driveCreateFile(token, content, done){
+    var boundary = 'focuslog_boundary_314159';
+    var delimiter = "\r\n--" + boundary + "\r\n";
+    var closeDelim = "\r\n--" + boundary + "--";
+    var metadata = { name: 'focus-log-backup.json', mimeType: 'application/json' };
+    var body =
+      delimiter + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(metadata) +
+      delimiter + 'Content-Type: application/json\r\n\r\n' + content +
+      closeDelim;
+    fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+      },
+      body: body
+    }).then(function(r){ return r.ok ? r.json() : Promise.reject(r); })
+      .then(function(json){ done(null, json.id); })
+      .catch(function(err){ done(err); });
+  }
+
+  function driveUpdateFile(token, fileId, content, done){
+    fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: content
+    }).then(function(r){ return r.ok ? null : Promise.reject(r); })
+      .then(function(){ done(null); })
+      .catch(function(err){ done(err); });
+  }
+
+  function handleDriveError(errResp){
+    if(errResp && errResp.status === 401){ driveAccessToken = null; driveTokenExpiry = 0; }
+    if(errResp && errResp.status === 404){ driveMeta.fileId = null; }
+    driveMeta.pendingRetry = true;
+    saveDriveMeta();
+    renderDriveSync();
+  }
+
+  function doUpload(token){
+    var content = JSON.stringify({ exportedAt: new Date().toISOString(), sessions: appData.sessions }, null, 2);
+    function onDone(err, newId){
+      if(err){ handleDriveError(err); return; }
+      if(newId) driveMeta.fileId = newId;
+      driveMeta.lastSynced = new Date().toISOString();
+      driveMeta.pendingRetry = false;
+      saveDriveMeta();
+      renderDriveSync();
+    }
+    if(driveMeta.fileId) driveUpdateFile(token, driveMeta.fileId, content, function(err){ onDone(err); });
+    else driveCreateFile(token, content, onDone);
+  }
+
+  function attemptDriveSync(interactive){
+    if(!driveMeta.connected) return;
+    if(navigator.onLine === false){
+      driveMeta.pendingRetry = true; saveDriveMeta(); renderDriveSync(); return;
+    }
+    getFreshAccessToken(function(token){
+      if(!token){ driveMeta.pendingRetry = true; saveDriveMeta(); renderDriveSync(); return; }
+      doUpload(token);
+    }, !!interactive);
+  }
+
+  function connectDrive(){
+    ensureTokenClient(function(client){
+      client.requestAccessToken({
+        prompt: 'consent',
+        callback: function(resp){
+          if(resp && resp.access_token){
+            driveAccessToken = resp.access_token;
+            driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+            driveMeta.connected = true;
+            saveDriveMeta();
+            doUpload(driveAccessToken);
+          }
+          renderDriveSync();
+        }
+      });
+    });
+  }
+
+  function renderDriveSync(){
+    var el = document.getElementById('driveSync');
+    if(!el) return;
+    if(!driveMeta.connected){
+      el.innerHTML = '<div class="drive-row"><span>Google Drive: not connected</span>' +
+        '<button class="btn-link" id="driveConnectBtn">Connect</button></div>';
+      var cbtn = document.getElementById('driveConnectBtn');
+      if(cbtn) cbtn.addEventListener('click', connectDrive);
+    } else {
+      var label;
+      if(driveMeta.pendingRetry) label = 'Sync pending';
+      else if(driveMeta.lastSynced) label = 'Synced ' + fmtTime(new Date(driveMeta.lastSynced));
+      else label = 'Connected';
+      el.innerHTML = '<div class="drive-row"><span>Google Drive: ' + label + '</span>' +
+        '<button class="btn-link" id="driveSyncBtn">Sync now</button></div>';
+      var sbtn = document.getElementById('driveSyncBtn');
+      if(sbtn) sbtn.addEventListener('click', function(){ attemptDriveSync(true); });
+    }
+  }
+
+  window.addEventListener('online', function(){
+    if(driveMeta.connected && driveMeta.pendingRetry) attemptDriveSync(false);
+  });
+
+  // ---- runtime timer state (not persisted directly, except currentSession) ----
+  var phase = 'focus';           // 'focus' | 'break'
+  var running = false;
+  var selectedSubject = null;
+  var elapsedMsAtPause = 0;
+  var runStartEpoch = null;
+  var totalSecondsForPhase = currentOption().focus;
+  var tickHandle = null;
+  var tickCount = 0;
+
+  function totalForPhase(p){ return p === 'focus' ? currentOption().focus : currentOption().brk; }
+
+  function elapsedMs(){
+    return elapsedMsAtPause + (running ? (Date.now() - runStartEpoch) : 0);
+  }
+  function remainingSeconds(){
+    var r = totalSecondsForPhase - Math.floor(elapsedMs()/1000);
+    return r < 0 ? 0 : r;
+  }
+
+  // ---- DOM refs ----
+  var appEl = document.getElementById('app');
+  var pickerArea = document.getElementById('pickerArea');
+  var digitsEl = document.getElementById('digits');
+  var phaseTextEl = document.getElementById('phaseText');
+  var ringProgress = document.getElementById('ringProgress');
+  var startPauseBtn = document.getElementById('startPauseBtn');
+  var resetBtn = document.getElementById('resetBtn');
+
+  ringProgress.style.strokeDasharray = String(RING_C);
+
+  // ---- tabs ----
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab-btn').forEach(function(b){
+        b.classList.remove('active'); b.setAttribute('aria-selected','false');
+      });
+      document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+      btn.classList.add('active'); btn.setAttribute('aria-selected','true');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab === 'history') renderHistory();
+    });
+  });
+
+  // ---- subject picker ----
+  function renderPicker(){
+    if(phase === 'break'){
+      pickerArea.innerHTML = '<p class="break-note">On a break. Studying resumes after this.</p>';
+      return;
+    }
+    var locked = running || elapsedMsAtPause > 0;
+
+    var html = '<p class="picker-label">How long?</p><div class="chip-row">';
+    DURATION_OPTIONS.forEach(function(opt, i){
+      var sel = i === selectedDurationIndex ? ' selected' : '';
+      var dis = locked ? ' disabled' : '';
+      html += '<button class="chip' + sel + '"' + dis + ' data-duration-index="' + i + '">' + opt.minutes + ' min</button>';
+    });
+    html += '</div>';
+
+    html += '<p class="picker-label">What are you studying?</p><div class="chip-row">';
+    SUBJECTS.forEach(function(s){
+      var sel = s === selectedSubject ? ' selected' : '';
+      var dis = locked ? ' disabled' : '';
+      html += '<button class="chip' + sel + '"' + dis + ' data-subject="' + s + '">' + s + '</button>';
+    });
+    html += '</div>';
+
+    pickerArea.innerHTML = html;
+
+    pickerArea.querySelectorAll('[data-duration-index]').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        if(running || elapsedMsAtPause > 0) return;
+        selectedDurationIndex = parseInt(chip.dataset.durationIndex, 10);
+        totalSecondsForPhase = currentOption().focus;
+        renderPicker();
+        renderControls();
+        renderTimerFace();
+      });
+    });
+    pickerArea.querySelectorAll('[data-subject]').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        if(running || elapsedMsAtPause > 0) return;
+        selectedSubject = chip.dataset.subject;
+        renderPicker();
+        renderControls();
+      });
+    });
+  }
+
+  function fmtClock(totalSeconds){
+    var m = Math.floor(totalSeconds/60);
+    var s = totalSeconds % 60;
+    return (m<10?'0':'')+m + ':' + (s<10?'0':'')+s;
+  }
+
+  function renderTimerFace(){
+    var remaining = remainingSeconds();
+    digitsEl.textContent = fmtClock(remaining);
+    phaseTextEl.textContent = phase === 'focus' ? 'Focus session' : 'Break';
+    var progress = totalSecondsForPhase > 0 ? (remaining / totalSecondsForPhase) : 0;
+    ringProgress.style.strokeDashoffset = String(RING_C * (1 - progress));
+    appEl.classList.toggle('phase-break', phase === 'break');
+  }
+
+  function renderControls(){
+    if(running) startPauseBtn.textContent = 'Pause';
+    else if(elapsedMsAtPause > 0) startPauseBtn.textContent = 'Resume';
+    else startPauseBtn.textContent = 'Start';
+
+    var needsSubject = phase === 'focus' && !selectedSubject && elapsedMsAtPause === 0 && !running;
+    startPauseBtn.disabled = needsSubject;
+  }
+
+  // ---- timer control ----
+  function startTimer(){
+    if(phase === 'focus' && !selectedSubject && elapsedMsAtPause === 0) return;
+    if(running) return;
+    running = true;
+    runStartEpoch = Date.now();
+
+    if(phase === 'focus' && elapsedMsAtPause === 0 && !appData.currentSession){
+      var nowIso = new Date().toISOString();
+      appData.currentSession = {
+        subject: selectedSubject,
+        startTime: nowIso,
+        plannedSeconds: currentOption().focus,
+        lastHeartbeat: nowIso
+      };
+      persist(appData);
+    }
+
+    tickCount = 0;
+    tickHandle = setInterval(tick, 1000);
+    renderPicker();
+    renderControls();
+  }
+
+  function pauseTimer(){
+    if(!running) return;
+    elapsedMsAtPause += Date.now() - runStartEpoch;
+    running = false;
+    runStartEpoch = null;
+    clearInterval(tickHandle);
+    touchHeartbeat();
+    renderControls();
+  }
+
+  function touchHeartbeat(){
+    if(phase === 'focus' && appData.currentSession){
+      appData.currentSession.lastHeartbeat = new Date().toISOString();
+      persist(appData);
+    }
+  }
+
+  function resetTimer(){
+    if(phase === 'focus' && (running || elapsedMsAtPause > 0) && appData.currentSession){
+      var start = new Date(appData.currentSession.startTime);
+      var end = new Date();
+      var actual = Math.round((elapsedMs())/1000);
+      appData.sessions.push({
+        id: selectedSubject + '-' + start.getTime(),
+        subject: selectedSubject,
+        startTime: appData.currentSession.startTime,
+        endTime: end.toISOString(),
+        plannedSeconds: currentOption().focus,
+        actualSeconds: actual,
+        status: 'Interrupted'
+      });
+      appData.currentSession = null;
+      persist(appData);
+      selectedSubject = null;
+      attemptDriveSync(false);
+    }
+    clearInterval(tickHandle);
+    running = false;
+    runStartEpoch = null;
+    elapsedMsAtPause = 0;
+    totalSecondsForPhase = totalForPhase(phase);
+    renderPicker();
+    renderControls();
+    renderTimerFace();
+  }
+
+  function completePhase(){
+    clearInterval(tickHandle);
+    running = false;
+
+    if(phase === 'focus'){
+      if(appData.currentSession){
+        var start = new Date(appData.currentSession.startTime);
+        var end = new Date(start.getTime() + currentOption().focus*1000);
+        appData.sessions.push({
+          id: selectedSubject + '-' + start.getTime(),
+          subject: selectedSubject,
+          startTime: appData.currentSession.startTime,
+          endTime: end.toISOString(),
+          plannedSeconds: currentOption().focus,
+          actualSeconds: currentOption().focus,
+          status: 'Completed'
+        });
+        appData.currentSession = null;
+        persist(appData);
+      }
+      chime();
+      attemptDriveSync(false);
+      phase = 'break';
+      totalSecondsForPhase = currentOption().brk;
+      elapsedMsAtPause = 0;
+      runStartEpoch = Date.now();
+      running = true;
+      tickCount = 0;
+      tickHandle = setInterval(tick, 1000);
+    } else {
+      chime();
+      phase = 'focus';
+      totalSecondsForPhase = currentOption().focus;
+      elapsedMsAtPause = 0;
+      runStartEpoch = null;
+      running = false;
+      selectedSubject = null;
+    }
+    renderPicker();
+    renderControls();
+    renderTimerFace();
+  }
+
+  function tick(){
+    tickCount++;
+    if(tickCount % 5 === 0) touchHeartbeat();
+    renderTimerFace();
+    if(remainingSeconds() <= 0) completePhase();
+  }
+
+  startPauseBtn.addEventListener('click', function(){
+    if(running) pauseTimer(); else startTimer();
+  });
+  resetBtn.addEventListener('click', resetTimer);
+
+  window.addEventListener('beforeunload', touchHeartbeat);
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden) touchHeartbeat();
+  });
+
+  function chime(){
+    try{
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      var ctx = new Ctx();
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime + 0.5);
+    }catch(e){}
+    if(navigator.vibrate){ try{ navigator.vibrate(200); }catch(e){} }
+  }
+
+  // ---- history rendering ----
+  function isSameDay(a,b){
+    return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+  }
+  function startOfWeek(d){
+    var day = (d.getDay() + 6) % 7; // Monday = 0
+    var monday = new Date(d);
+    monday.setHours(0,0,0,0);
+    monday.setDate(d.getDate() - day);
+    return monday;
+  }
+  function fmtDuration(totalSeconds){
+    totalSeconds = Math.max(0, Math.round(totalSeconds));
+    if(totalSeconds < 60) return totalSeconds + 's';
+    var h = Math.floor(totalSeconds/3600);
+    var m = Math.round((totalSeconds%3600)/60);
+    return h > 0 ? (h+'h '+m+'m') : (m+'m');
+  }
+  function fmtTime(date){
+    return date.toLocaleTimeString([], {hour:'numeric', minute:'2-digit', hour12:true});
+  }
+  function fmtDateHeading(date){
+    var now = new Date();
+    var yest = new Date(now); yest.setDate(now.getDate()-1);
+    if(isSameDay(date, now)) return 'Today';
+    if(isSameDay(date, yest)) return 'Yesterday';
+    var day = date.getDate();
+    var month = date.toLocaleDateString([], {month:'short'});
+    var year = date.getFullYear();
+    return year === now.getFullYear() ? (day+' '+month) : (day+' '+month+' '+year);
+  }
+
+  function renderHistory(){
+    var sessions = appData.sessions.slice();
+    var now = new Date();
+    var weekStart = startOfWeek(now);
+
+    var todaySec = 0, weekSec = 0, allSec = 0;
+    var bySubject = {};
+    SUBJECTS.forEach(function(s){ bySubject[s] = 0; });
+
+    sessions.forEach(function(s){
+      var st = new Date(s.startTime);
+      allSec += s.actualSeconds;
+      if(isSameDay(st, now)) todaySec += s.actualSeconds;
+      if(st >= weekStart) weekSec += s.actualSeconds;
+      if(bySubject.hasOwnProperty(s.subject)) bySubject[s.subject] += s.actualSeconds;
+      else bySubject[s.subject] = s.actualSeconds;
+    });
+
+    document.getElementById('statsStrip').innerHTML =
+      '<div class="stats-strip">' +
+        '<div class="stat"><div class="label">Today</div><div class="value">' + fmtDuration(todaySec) + '</div></div>' +
+        '<div class="stat"><div class="label">This week</div><div class="value">' + fmtDuration(weekSec) + '</div></div>' +
+        '<div class="stat"><div class="label">All time</div><div class="value">' + fmtDuration(allSec) + '</div></div>' +
+      '</div>';
+    document.getElementById('sessionsLine').textContent = sessions.length + (sessions.length === 1 ? ' session logged' : ' sessions logged');
+    renderDriveSync();
+
+    var maxSubj = 0;
+    Object.keys(bySubject).forEach(function(k){ if(bySubject[k] > maxSubj) maxSubj = bySubject[k]; });
+    var subjHtml = '';
+    SUBJECTS.forEach(function(s){
+      var sec = bySubject[s] || 0;
+      var pct = maxSubj > 0 ? Math.round((sec/maxSubj)*100) : 0;
+      subjHtml +=
+        '<div class="subj-row">' +
+          '<div class="subj-row-top"><span class="name">' + s + '</span><span class="time">' + fmtDuration(sec) + '</span></div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+        '</div>';
+    });
+    document.getElementById('subjectStats').innerHTML = subjHtml;
+
+    var timelineEl = document.getElementById('timeline');
+    if(sessions.length === 0){
+      timelineEl.innerHTML = '<div class="empty-state">No sessions yet. Start a focus session from the Pomodoro tab and it will show up here.</div>';
+      return;
+    }
+
+    var sorted = sessions.slice().sort(function(a,b){ return new Date(b.startTime) - new Date(a.startTime); });
+    var groups = [];
+    var groupMap = {};
+    sorted.forEach(function(s){
+      var st = new Date(s.startTime);
+      var key = st.getFullYear()+'-'+st.getMonth()+'-'+st.getDate();
+      if(!groupMap[key]){
+        groupMap[key] = { date: st, items: [] };
+        groups.push(groupMap[key]);
+      }
+      groupMap[key].items.push(s);
+    });
+
+    var html = '';
+    groups.forEach(function(g){
+      var items = g.items.slice().sort(function(a,b){ return new Date(a.startTime) - new Date(b.startTime); });
+      html += '<div class="date-group"><h3 class="date-heading">' + fmtDateHeading(g.date) + '</h3>';
+      items.forEach(function(s){
+        var start = new Date(s.startTime);
+        var end = new Date(s.endTime);
+        var statusClass = s.status === 'Interrupted' ? ' interrupted' : '';
+        html +=
+          '<div class="session-row">' +
+            '<div class="session-left">' +
+              '<div class="subject">' + s.subject + '</div>' +
+              '<div class="range">' + fmtTime(start) + ' \u2192 ' + fmtTime(end) + '</div>' +
+            '</div>' +
+            '<div class="session-right">' +
+              '<div class="dur">' + fmtDuration(s.actualSeconds) + '</div>' +
+              '<div class="status' + statusClass + '"><span class="dot"></span>' + s.status + '</div>' +
+            '</div>' +
+          '</div>';
+      });
+      html += '</div>';
+    });
+    timelineEl.innerHTML = html;
+  }
+
+  // ---- init ----
+  renderPicker();
+  renderControls();
+  renderTimerFace();
+  renderHistory();
+  renderDriveSync();
+})();
+</script>
+</body>
+</html>
