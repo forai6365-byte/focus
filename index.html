@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -374,7 +373,7 @@
   var STORAGE_KEY = 'focusLogData_v1';
 
   // ---- Google Drive backup ----
-  // Paste your own OAuth Client ID below (see setup instructions). Until you171957662996-j9i11pt9vk2h36ijmfb0oje2oqc3mnla.apps.googleusercontent.com
+  // Paste your own OAuth Client ID below (see setup instructions). Until you
   // do, the Drive "Connect" button will just fail quietly — everything else
   // in the app works fine without it.
   var GOOGLE_CLIENT_ID = '171957662996-j9i11pt9vk2h36ijmfb0oje2oqc3mnla.apps.googleusercontent.com';
@@ -444,6 +443,7 @@
 
   var driveAccessToken = null;
   var driveTokenExpiry = 0;
+  var driveLastError = null;
   var _tokenClient = null;
 
   function ensureTokenClient(cb){
@@ -517,7 +517,18 @@
     if(errResp && errResp.status === 404){ driveMeta.fileId = null; }
     driveMeta.pendingRetry = true;
     saveDriveMeta();
-    renderDriveSync();
+    if(errResp && typeof errResp.json === 'function'){
+      errResp.json().then(function(body){
+        driveLastError = (body && body.error && body.error.message) ? body.error.message : (errResp.status + ' ' + errResp.statusText);
+        renderDriveSync();
+      }).catch(function(){
+        driveLastError = errResp.status ? (errResp.status + ' ' + errResp.statusText) : 'Unknown error';
+        renderDriveSync();
+      });
+    } else {
+      driveLastError = (errResp && errResp.message) ? errResp.message : 'Unknown error';
+      renderDriveSync();
+    }
   }
 
   function doUpload(token){
@@ -540,12 +551,17 @@
       driveMeta.pendingRetry = true; saveDriveMeta(); renderDriveSync(); return;
     }
     getFreshAccessToken(function(token){
-      if(!token){ driveMeta.pendingRetry = true; saveDriveMeta(); renderDriveSync(); return; }
+      if(!token){
+        driveMeta.pendingRetry = true;
+        driveLastError = driveLastError || 'Could not get an access token — tap Sync now to re-authorize.';
+        saveDriveMeta(); renderDriveSync(); return;
+      }
       doUpload(token);
     }, !!interactive);
   }
 
   function connectDrive(){
+    driveLastError = null;
     ensureTokenClient(function(client){
       client.requestAccessToken({
         prompt: 'consent',
@@ -556,6 +572,10 @@
             driveMeta.connected = true;
             saveDriveMeta();
             doUpload(driveAccessToken);
+          } else {
+            driveLastError = (resp && resp.error_description) ? resp.error_description
+              : (resp && resp.error) ? resp.error
+              : 'Sign-in did not complete (popup closed or blocked).';
           }
           renderDriveSync();
         }
@@ -567,8 +587,9 @@
     var el = document.getElementById('driveSync');
     if(!el) return;
     if(!driveMeta.connected){
+      var sub = driveLastError ? ('<div style="font-size:12px;color:var(--interrupted);margin-top:4px;">' + driveLastError + '</div>') : '';
       el.innerHTML = '<div class="drive-row"><span>Google Drive: not connected</span>' +
-        '<button class="btn-link" id="driveConnectBtn">Connect</button></div>';
+        '<button class="btn-link" id="driveConnectBtn">Connect</button></div>' + sub;
       var cbtn = document.getElementById('driveConnectBtn');
       if(cbtn) cbtn.addEventListener('click', connectDrive);
     } else {
@@ -576,10 +597,11 @@
       if(driveMeta.pendingRetry) label = 'Sync pending';
       else if(driveMeta.lastSynced) label = 'Synced ' + fmtTime(new Date(driveMeta.lastSynced));
       else label = 'Connected';
+      var sub2 = (driveMeta.pendingRetry && driveLastError) ? ('<div style="font-size:12px;color:var(--interrupted);margin-top:4px;">' + driveLastError + '</div>') : '';
       el.innerHTML = '<div class="drive-row"><span>Google Drive: ' + label + '</span>' +
-        '<button class="btn-link" id="driveSyncBtn">Sync now</button></div>';
+        '<button class="btn-link" id="driveSyncBtn">Sync now</button></div>' + sub2;
       var sbtn = document.getElementById('driveSyncBtn');
-      if(sbtn) sbtn.addEventListener('click', function(){ attemptDriveSync(true); });
+      if(sbtn) sbtn.addEventListener('click', function(){ driveLastError = null; attemptDriveSync(true); });
     }
   }
 
