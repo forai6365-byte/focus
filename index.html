@@ -446,35 +446,42 @@
   var driveLastError = null;
   var _tokenClient = null;
 
-  function ensureTokenClient(cb){
+  function ensureTokenClient(cb, attemptsLeft){
     if(_tokenClient){ cb(_tokenClient); return; }
-    if(!(window.google && google.accounts && google.accounts.oauth2)){
-      setTimeout(function(){ ensureTokenClient(cb); }, 300);
+    if(window.google && google.accounts && google.accounts.oauth2){
+      _tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: function(){}
+      });
+      cb(_tokenClient);
       return;
     }
-    _tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: DRIVE_SCOPE,
-      callback: function(){}
-    });
-    cb(_tokenClient);
+    if(attemptsLeft === undefined) attemptsLeft = 25;
+    if(attemptsLeft <= 0){ cb(null); return; }
+    setTimeout(function(){ ensureTokenClient(cb, attemptsLeft - 1); }, 300);
   }
 
   function getFreshAccessToken(callback, interactive){
     if(driveAccessToken && Date.now() < driveTokenExpiry - 30000){ callback(driveAccessToken); return; }
     ensureTokenClient(function(client){
-      client.requestAccessToken({
-        prompt: interactive ? 'consent' : '',
-        callback: function(resp){
-          if(resp && resp.access_token){
-            driveAccessToken = resp.access_token;
-            driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
-            callback(driveAccessToken);
-          } else {
-            callback(null);
+      if(!client){ callback(null); return; }
+      try{
+        client.requestAccessToken({
+          prompt: interactive ? 'consent' : '',
+          callback: function(resp){
+            if(resp && resp.access_token){
+              driveAccessToken = resp.access_token;
+              driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+              callback(driveAccessToken);
+            } else {
+              callback(null);
+            }
           }
-        }
-      });
+        });
+      }catch(e){
+        callback(null);
+      }
     });
   }
 
@@ -560,26 +567,43 @@
     }, !!interactive);
   }
 
+  var driveConnecting = false;
+
   function connectDrive(){
     driveLastError = null;
+    driveConnecting = true;
+    renderDriveSync();
     ensureTokenClient(function(client){
-      client.requestAccessToken({
-        prompt: 'consent',
-        callback: function(resp){
-          if(resp && resp.access_token){
-            driveAccessToken = resp.access_token;
-            driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
-            driveMeta.connected = true;
-            saveDriveMeta();
-            doUpload(driveAccessToken);
-          } else {
-            driveLastError = (resp && resp.error_description) ? resp.error_description
-              : (resp && resp.error) ? resp.error
-              : 'Sign-in did not complete (popup closed or blocked).';
+      if(!client){
+        driveConnecting = false;
+        driveLastError = 'Google sign-in script did not load. Check your internet connection, or turn off any ad-blocker / privacy extension for this site and try again.';
+        renderDriveSync();
+        return;
+      }
+      try{
+        client.requestAccessToken({
+          prompt: 'consent',
+          callback: function(resp){
+            driveConnecting = false;
+            if(resp && resp.access_token){
+              driveAccessToken = resp.access_token;
+              driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+              driveMeta.connected = true;
+              saveDriveMeta();
+              doUpload(driveAccessToken);
+            } else {
+              driveLastError = (resp && resp.error_description) ? resp.error_description
+                : (resp && resp.error) ? resp.error
+                : 'Sign-in did not complete (popup closed or blocked).';
+            }
+            renderDriveSync();
           }
-          renderDriveSync();
-        }
-      });
+        });
+      }catch(e){
+        driveConnecting = false;
+        driveLastError = 'Could not open Google sign-in: ' + (e && e.message ? e.message : e);
+        renderDriveSync();
+      }
     });
   }
 
@@ -587,9 +611,10 @@
     var el = document.getElementById('driveSync');
     if(!el) return;
     if(!driveMeta.connected){
-      var sub = driveLastError ? ('<div style="font-size:12px;color:var(--interrupted);margin-top:4px;">' + driveLastError + '</div>') : '';
-      el.innerHTML = '<div class="drive-row"><span>Google Drive: not connected</span>' +
-        '<button class="btn-link" id="driveConnectBtn">Connect</button></div>' + sub;
+      var statusLabel = driveConnecting ? 'connecting…' : 'not connected';
+      var sub = (!driveConnecting && driveLastError) ? ('<div style="font-size:12px;color:var(--interrupted);margin-top:4px;">' + driveLastError + '</div>') : '';
+      el.innerHTML = '<div class="drive-row"><span>Google Drive: ' + statusLabel + '</span>' +
+        '<button class="btn-link" id="driveConnectBtn"' + (driveConnecting ? ' disabled' : '') + '>Connect</button></div>' + sub;
       var cbtn = document.getElementById('driveConnectBtn');
       if(cbtn) cbtn.addEventListener('click', connectDrive);
     } else {
