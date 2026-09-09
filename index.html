@@ -573,7 +573,9 @@
     driveLastError = null;
     driveConnecting = true;
     renderDriveSync();
+    console.log('[FocusLog] connectDrive: requesting token client...');
     ensureTokenClient(function(client){
+      console.log('[FocusLog] ensureTokenClient resolved, client =', client);
       if(!client){
         driveConnecting = false;
         driveLastError = 'Google sign-in script did not load. Check your internet connection, or turn off any ad-blocker / privacy extension for this site and try again.';
@@ -581,25 +583,31 @@
         return;
       }
       try{
+        console.log('[FocusLog] calling requestAccessToken...');
         client.requestAccessToken({
           prompt: 'consent',
           callback: function(resp){
+            console.log('[FocusLog] token callback FIRED. resp =', resp);
             driveConnecting = false;
             if(resp && resp.access_token){
               driveAccessToken = resp.access_token;
               driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
               driveMeta.connected = true;
               saveDriveMeta();
+              console.log('[FocusLog] got token, uploading...');
               doUpload(driveAccessToken);
             } else {
               driveLastError = (resp && resp.error_description) ? resp.error_description
                 : (resp && resp.error) ? resp.error
                 : 'Sign-in did not complete (popup closed or blocked).';
+              console.log('[FocusLog] no access_token in response, error =', driveLastError);
             }
             renderDriveSync();
           }
         });
+        console.log('[FocusLog] requestAccessToken call returned (popup should be opening now)');
       }catch(e){
+        console.error('[FocusLog] requestAccessToken threw:', e);
         driveConnecting = false;
         driveLastError = 'Could not open Google sign-in: ' + (e && e.message ? e.message : e);
         renderDriveSync();
